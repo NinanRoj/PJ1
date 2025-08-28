@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/dashboard.css') }}?v=9">
+</head>
+<body>
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar__left"></div>
+    <div class="topbar__right">
+      <span class="user-name">NA</span>
+      <span class="user-avatar" aria-hidden="true"></span>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <nav class="nav">
+      <a class="nav__item nav__item--active" href="#">Upload PDF</a>
+      <a class="nav__item" href="#">Similarity History</a>
+      <a class="nav__item" href="#">Settings</a>
+    </nav>
+  </aside>
+
+  <!-- PDF.js (ใช้ CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // บอกตำแหน่ง worker ของ pdf.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+</head>
+<body>
+  <!-- topbar / sidebar เหมือนเดิม ... -->
+
+  <main class="content">
+    <!-- FABs (ซ่อนตอนยังไม่มีไฟล์) -->
+    <div class="fab-stack hidden">
+      <button id="addBtn" class="fab" title="Add PDFs">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+      <button id="pickBtn" class="fab" title="Choose files">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 7h10l3 3v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 11h6M9 15h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <button id="resetBtn" class="fab-right hidden" title="Reset">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 4v6h6M20 20v-6h-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M20 10a8 8 0 0 0-14-4M4 14a8 8 0 0 0 14 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+
+    <!-- โหมดว่าง: กล่องอัปโหลด (อยู่กลาง) -->
+    <section id="dropCard" class="card">
+      <form class="uploader" onsubmit="return false;">
+        <div id="dropzone" class="dropzone" tabindex="0">
+          <div class="dz-text">
+            <div class="dz-line"></div>
+            <p>Drag &amp; Drop</p>
+          </div>
+          <input id="pdfInput" type="file" accept="application/pdf" hidden multiple>
+          <button id="chooseBtn" class="btn-primary" type="button">Choose file PDF.</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- โหมดมีไฟล์: กริด PDF -->
+    <section id="gridSection" class="grid hidden" aria-live="polite"></section>
+
+    <!-- CTA -->
+    <button id="checkBtn" class="cta" disabled>Check Similarity</button>
+
+    <!-- Modal Preview (ยังใช้ได้เหมือนเดิม) -->
+    <div id="pdfModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal__backdrop" id="modalBackdrop"></div>
+      <div class="modal__panel">
+        <div class="modal__top">
+          <div id="modalTitle" class="modal__title">Preview</div>
+          <button id="modalClose" class="modal__close" aria-label="Close">×</button>
+        </div>
+        <div class="modal__body">
+          <iframe id="pdfFrame" class="pdf-object" title="PDF preview"></iframe>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const input = document.getElementById('pdfInput');
+    const chooseBtn = document.getElementById('chooseBtn');
+    const dropzone = document.getElementById('dropzone');
+    const grid = document.getElementById('gridSection');
+    const dropCard = document.getElementById('dropCard');
+    const checkBtn = document.getElementById('checkBtn');
+
+    const fabStack = document.querySelector('.fab-stack');
+    const resetBtn = document.getElementById('resetBtn');
+    const addBtn = document.getElementById('addBtn');
+    const pickBtn = document.getElementById('pickBtn');
+
+    const pdfModal = document.getElementById('pdfModal');
+    const pdfFrame = document.getElementById('pdfFrame');
+    const modalClose = document.getElementById('modalClose');
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalTitle = document.getElementById('modalTitle');
+
+    let filesState = []; // { id, file, name }
+    let previewURL = null;
+    function uid(){ return Math.random().toString(36).slice(2,9); }
+
+    function toggleFabs(show){
+      fabStack.classList.toggle('hidden', !show);
+      resetBtn.classList.toggle('hidden', !show);
+    }
+
+    function openPreview(file){
+      if (previewURL) URL.revokeObjectURL(previewURL);
+      previewURL = URL.createObjectURL(file);
+      pdfFrame.src = previewURL;
+      modalTitle.textContent = file.name;
+      pdfModal.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+    function closePreview(){
+      pdfModal.classList.add('hidden');
+      document.body.style.overflow = '';
+      pdfFrame.src = '';
+      if (previewURL) { URL.revokeObjectURL(previewURL); previewURL = null; }
+    }
+    modalClose.addEventListener('click', closePreview);
+    modalBackdrop.addEventListener('click', closePreview);
+    window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closePreview(); });
+
+    // --- พรีวิวหน้าแรกด้วย PDF.js บนการ์ด ---
+    async function renderPdfPreview(file, canvas){
+      try{
+        // โหลดเป็น ArrayBuffer แล้วส่งให้ pdf.js
+        const buf = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buf) });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+
+        const ratio = window.devicePixelRatio || 1;
+        const cont = canvas.parentElement;                     // .thumb
+        const maxW = cont.clientWidth;
+        const maxH = cont.clientHeight;
+
+        const vp0 = page.getViewport({ scale: 1 });
+        // scale ให้พอดีกับกรอบ (contain)
+        const scaleW = (maxW * ratio) / vp0.width;
+        const scaleH = (maxH * ratio) / vp0.height;
+        const scale = Math.min(scaleW, scaleH);
+        const vp = page.getViewport({ scale });
+
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+        canvas.style.width = (vp.width / ratio) + 'px';
+        canvas.style.height = (vp.height / ratio) + 'px';
+
+        const ctx = canvas.getContext('2d', { alpha: false });
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        await pdf.destroy();
+      }catch(err){
+        console.error('PDF preview error:', err);
+        // ถ้าแสดงไม่ได้ ก็ปล่อยเป็นการ์ดเปล่า
+      }finally{
+        const loader = canvas.parentElement.querySelector('.loading');
+        if (loader) loader.remove();
+      }
+    }
+
+    function render(){
+      const hasFiles = filesState.length > 0;
+      dropCard.classList.toggle('hidden', hasFiles);
+      grid.classList.toggle('hidden', !hasFiles);
+      checkBtn.disabled = filesState.length < 1;
+      toggleFabs(hasFiles);
+
+      if(!hasFiles){ grid.innerHTML = ''; return; }
+
+      grid.innerHTML = filesState.map(f => `
+        <div class="pdf-card" data-id="${f.id}" title="Click to preview">
+          <button class="remove" title="Remove">×</button>
+          <div class="thumb" aria-hidden="true">
+            <canvas></canvas>
+            <div class="loading" aria-hidden="true"></div>
+          </div>
+          <div class="name">${f.name}</div>
+        </div>
+      `).join('');
+
+      // ลบไฟล์
+      grid.querySelectorAll('.pdf-card .remove').forEach(btn=>{
+        btn.addEventListener('click', (e)=>{
+          const card = e.target.closest('.pdf-card');
+          const id = card.getAttribute('data-id');
+          filesState = filesState.filter(x=>x.id !== id);
+          render();
+          e.stopPropagation();
+        });
+      });
+
+      // คลิกดูแบบเต็มโมดัล (ยังคงใช้ได้)
+      grid.querySelectorAll('.pdf-card').forEach(card=>{
+        card.addEventListener('click', (e)=>{
+          if (e.target.closest('.remove')) return;
+          const id = card.getAttribute('data-id');
+          const f = filesState.find(x=>x.id === id);
+          if (f) openPreview(f.file);
+        });
+      });
+
+      // เรียกเรนเดอร์พรีวิว
+      grid.querySelectorAll('.pdf-card').forEach(card=>{
+        const id = card.getAttribute('data-id');
+        const f = filesState.find(x=>x.id === id);
+        const canvas = card.querySelector('canvas');
+        if (f && canvas) renderPdfPreview(f.file, canvas);
+      });
+    }
+
+    function addFiles(fileList){
+      const toAdd = Array.from(fileList).filter(f => f.type === 'application/pdf');
+      toAdd.forEach(f => filesState.push({ id: uid(), file: f, name: f.name }));
+      render();
+    }
+
+    // choose & dnd
+    chooseBtn.addEventListener('click', ()=> input.click());
+    addBtn.addEventListener('click', ()=> input.click());
+    pickBtn.addEventListener('click', ()=> input.click());
+    input.addEventListener('change', ()=> {
+      if(input.files && input.files.length){ addFiles(input.files); input.value = ''; }
+    });
+    ['dragenter','dragover'].forEach(evt =>
+      dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('is-dragover'); })
+    );
+    ['dragleave','drop'].forEach(evt =>
+      dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('is-dragover'); })
+    );
+    dropzone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+    dropzone.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); input.click(); }});
+
+    // reset & submit demo
+    resetBtn.addEventListener('click', ()=>{ filesState = []; render(); closePreview(); });
+    checkBtn.addEventListener('click', ()=> alert('Selected: ' + filesState.map(f=>f.name).join(', ')));
+
+    render();
+  </script>
+</body>
+</html>
