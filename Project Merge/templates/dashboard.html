@@ -25,17 +25,6 @@
     </nav>
   </aside>
 
-  <!-- PDF.js (ใช้ CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>
-    // บอกตำแหน่ง worker ของ pdf.js
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  </script>
-</head>
-<body>
-  <!-- topbar / sidebar เหมือนเดิม ... -->
-
   <main class="content">
     <!-- FABs (ซ่อนตอนยังไม่มีไฟล์) -->
     <div class="fab-stack hidden">
@@ -70,7 +59,7 @@
     <!-- CTA -->
     <button id="checkBtn" class="cta" disabled>Check Similarity</button>
 
-    <!-- Modal Preview (ยังใช้ได้เหมือนเดิม) -->
+    <!-- Modal Preview -->
     <div id="pdfModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal__backdrop" id="modalBackdrop"></div>
       <div class="modal__panel">
@@ -85,167 +74,14 @@
     </div>
   </main>
 
+  <!-- ====== Scripts (วางท้าย body) ====== -->
+  <!-- 1) PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
-    const input = document.getElementById('pdfInput');
-    const chooseBtn = document.getElementById('chooseBtn');
-    const dropzone = document.getElementById('dropzone');
-    const grid = document.getElementById('gridSection');
-    const dropCard = document.getElementById('dropCard');
-    const checkBtn = document.getElementById('checkBtn');
-
-    const fabStack = document.querySelector('.fab-stack');
-    const resetBtn = document.getElementById('resetBtn');
-    const addBtn = document.getElementById('addBtn');
-    const pickBtn = document.getElementById('pickBtn');
-
-    const pdfModal = document.getElementById('pdfModal');
-    const pdfFrame = document.getElementById('pdfFrame');
-    const modalClose = document.getElementById('modalClose');
-    const modalBackdrop = document.getElementById('modalBackdrop');
-    const modalTitle = document.getElementById('modalTitle');
-
-    let filesState = []; // { id, file, name }
-    let previewURL = null;
-    function uid(){ return Math.random().toString(36).slice(2,9); }
-
-    function toggleFabs(show){
-      fabStack.classList.toggle('hidden', !show);
-      resetBtn.classList.toggle('hidden', !show);
-    }
-
-    function openPreview(file){
-      if (previewURL) URL.revokeObjectURL(previewURL);
-      previewURL = URL.createObjectURL(file);
-      pdfFrame.src = previewURL;
-      modalTitle.textContent = file.name;
-      pdfModal.classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-    }
-    function closePreview(){
-      pdfModal.classList.add('hidden');
-      document.body.style.overflow = '';
-      pdfFrame.src = '';
-      if (previewURL) { URL.revokeObjectURL(previewURL); previewURL = null; }
-    }
-    modalClose.addEventListener('click', closePreview);
-    modalBackdrop.addEventListener('click', closePreview);
-    window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closePreview(); });
-
-    // --- พรีวิวหน้าแรกด้วย PDF.js บนการ์ด ---
-    async function renderPdfPreview(file, canvas){
-      try{
-        // โหลดเป็น ArrayBuffer แล้วส่งให้ pdf.js
-        const buf = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buf) });
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-
-        const ratio = window.devicePixelRatio || 1;
-        const cont = canvas.parentElement;                     // .thumb
-        const maxW = cont.clientWidth;
-        const maxH = cont.clientHeight;
-
-        const vp0 = page.getViewport({ scale: 1 });
-        // scale ให้พอดีกับกรอบ (contain)
-        const scaleW = (maxW * ratio) / vp0.width;
-        const scaleH = (maxH * ratio) / vp0.height;
-        const scale = Math.min(scaleW, scaleH);
-        const vp = page.getViewport({ scale });
-
-        canvas.width = Math.floor(vp.width);
-        canvas.height = Math.floor(vp.height);
-        canvas.style.width = (vp.width / ratio) + 'px';
-        canvas.style.height = (vp.height / ratio) + 'px';
-
-        const ctx = canvas.getContext('2d', { alpha: false });
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        await pdf.destroy();
-      }catch(err){
-        console.error('PDF preview error:', err);
-        // ถ้าแสดงไม่ได้ ก็ปล่อยเป็นการ์ดเปล่า
-      }finally{
-        const loader = canvas.parentElement.querySelector('.loading');
-        if (loader) loader.remove();
-      }
-    }
-
-    function render(){
-      const hasFiles = filesState.length > 0;
-      dropCard.classList.toggle('hidden', hasFiles);
-      grid.classList.toggle('hidden', !hasFiles);
-      checkBtn.disabled = filesState.length < 1;
-      toggleFabs(hasFiles);
-
-      if(!hasFiles){ grid.innerHTML = ''; return; }
-
-      grid.innerHTML = filesState.map(f => `
-        <div class="pdf-card" data-id="${f.id}" title="Click to preview">
-          <button class="remove" title="Remove">×</button>
-          <div class="thumb" aria-hidden="true">
-            <canvas></canvas>
-            <div class="loading" aria-hidden="true"></div>
-          </div>
-          <div class="name">${f.name}</div>
-        </div>
-      `).join('');
-
-      // ลบไฟล์
-      grid.querySelectorAll('.pdf-card .remove').forEach(btn=>{
-        btn.addEventListener('click', (e)=>{
-          const card = e.target.closest('.pdf-card');
-          const id = card.getAttribute('data-id');
-          filesState = filesState.filter(x=>x.id !== id);
-          render();
-          e.stopPropagation();
-        });
-      });
-
-      // คลิกดูแบบเต็มโมดัล (ยังคงใช้ได้)
-      grid.querySelectorAll('.pdf-card').forEach(card=>{
-        card.addEventListener('click', (e)=>{
-          if (e.target.closest('.remove')) return;
-          const id = card.getAttribute('data-id');
-          const f = filesState.find(x=>x.id === id);
-          if (f) openPreview(f.file);
-        });
-      });
-
-      // เรียกเรนเดอร์พรีวิว
-      grid.querySelectorAll('.pdf-card').forEach(card=>{
-        const id = card.getAttribute('data-id');
-        const f = filesState.find(x=>x.id === id);
-        const canvas = card.querySelector('canvas');
-        if (f && canvas) renderPdfPreview(f.file, canvas);
-      });
-    }
-
-    function addFiles(fileList){
-      const toAdd = Array.from(fileList).filter(f => f.type === 'application/pdf');
-      toAdd.forEach(f => filesState.push({ id: uid(), file: f, name: f.name }));
-      render();
-    }
-
-    // choose & dnd
-    chooseBtn.addEventListener('click', ()=> input.click());
-    addBtn.addEventListener('click', ()=> input.click());
-    pickBtn.addEventListener('click', ()=> input.click());
-    input.addEventListener('change', ()=> {
-      if(input.files && input.files.length){ addFiles(input.files); input.value = ''; }
-    });
-    ['dragenter','dragover'].forEach(evt =>
-      dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('is-dragover'); })
-    );
-    ['dragleave','drop'].forEach(evt =>
-      dropzone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('is-dragover'); })
-    );
-    dropzone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
-    dropzone.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); input.click(); }});
-
-    // reset & submit demo
-    resetBtn.addEventListener('click', ()=>{ filesState = []; render(); closePreview(); });
-    checkBtn.addEventListener('click', ()=> alert('Selected: ' + filesState.map(f=>f.name).join(', ')));
-
-    render();
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   </script>
+  <!-- 2) โมดูลหลักของเรา -->
+  <script type="module" src="{{ url_for('static', path='js/app.js') }}"></script>
 </body>
 </html>

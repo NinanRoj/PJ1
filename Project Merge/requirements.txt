@@ -5,3 +5,11 @@ python-multipart
 jinja2
 passlib[bcrypt]
 python-dotenv
+sentence-transformers
+transformers
+scikit-learn
+numpy
+pymupdf
+pillow
+pytesseract
+pythainlp
